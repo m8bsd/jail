@@ -1,92 +1,67 @@
-# expense
+# FreeBSD Jail Makefile
 
-A simple command-line expense tracker written in Rust. No dependencies, just the standard library.
+A small Makefile for creating and managing a FreeBSD jail. It downloads the base system, writes a `jail.conf.d` entry, enables the jail at boot, and provides shortcuts for starting, stopping and entering the jail.
 
-## Build
+It uses FreeBSD's native `make` and plain directories (no ZFS required).
 
-```
-cargo build --release
-```
+## Requirements
 
-The binary is created at `target/release/expense`. Copy it somewhere on your `PATH` to use it from anywhere:
+- FreeBSD host
+- Root privileges
+- Network access to `download.freebsd.org`
 
-```
-cp target/release/expense ~/.local/bin/
-```
+## Quick start
 
-## Usage
-
-```
-expense add <amount> <category> [description...]
-expense list [category]
-expense summary
-expense delete <id>
-expense help
+```sh
+make all JAIL_NAME=web JAIL_IP=192.168.1.50 JAIL_IF=em0 RELEASE=14.3-RELEASE
+make start JAIL_NAME=web
+make console JAIL_NAME=web
 ```
 
-### Examples
+`make all` runs `dirs`, `base`, `conf` and `enable` in order.
 
-```
-$ expense add 12.50 food lunch with Sam
-Added #1: 12.50 [food]
+## Targets
 
-$ expense add 40 transport taxi
-Added #2: 40.00 [transport]
+| Target    | Description                                              |
+|-----------|----------------------------------------------------------|
+| `help`    | Show available targets and variables                     |
+| `all`     | Full setup: dirs, base, conf, enable                     |
+| `dirs`    | Create the jail directory and `/etc/jail.conf.d`         |
+| `base`    | Download `base.txz` and extract it into the jail root    |
+| `conf`    | Write `/etc/jail.conf.d/<name>.conf`                     |
+| `enable`  | Set `jail_enable="YES"` and add the jail to `jail_list`  |
+| `start`   | Start the jail                                           |
+| `stop`    | Stop the jail                                            |
+| `restart` | Restart the jail                                         |
+| `console` | Open a shell inside the jail with `jexec`                |
+| `status`  | List running jails (`jls`)                               |
+| `destroy` | Stop the jail, remove its files and its config           |
 
-$ expense list
-  ID  DATE            AMOUNT  CATEGORY      DESCRIPTION
-   1  2026-10-17       12.50  food          lunch with Sam
-   2  2026-10-17       40.00  transport     taxi
-      TOTAL            52.50
+## Variables
 
-$ expense summary
-CATEGORY            TOTAL  SHARE
-transport           40.00  76.2%
-food                12.50  23.8%
-ALL                 52.50
+Override on the command line, or edit the defaults at the top of the Makefile.
 
-$ expense delete 2
-Deleted #2
-```
+| Variable    | Default                | Description                          |
+|-------------|------------------------|--------------------------------------|
+| `JAIL_NAME` | `myjail`               | Jail name                            |
+| `JAIL_IP`   | `192.168.1.50`         | IPv4 address assigned to the jail    |
+| `JAIL_IF`   | `em0`                  | Host network interface for the alias |
+| `JAIL_HOST` | `<JAIL_NAME>.local`    | Hostname inside the jail             |
+| `RELEASE`   | `14.3-RELEASE`         | FreeBSD release to download          |
+| `ARCH`      | `amd64`                | Architecture                         |
+| `JAIL_DIR`  | `/usr/local/jails`     | Parent directory for jail roots      |
 
-### Commands
+## What gets created
 
-| Command | Description |
-| --- | --- |
-| `add <amount> <category> [description...]` | Record an expense. The description is optional and can be several words. |
-| `list [category]` | Show all expenses with a total, optionally filtered by category. Alias: `ls`. |
-| `summary` | Show totals and percentage share per category, biggest first. |
-| `delete <id>` | Remove an expense by its ID. Alias: `rm`. |
-| `help` | Show usage. |
+- `${JAIL_DIR}/${JAIL_NAME}/` - the jail's root filesystem
+- `${JAIL_DIR}/base-${RELEASE}.txz` - cached base archive, reused by later jails
+- `/etc/jail.conf.d/${JAIL_NAME}.conf` - the jail configuration
+- `jail_enable` and `jail_list` entries in `/etc/rc.conf` (via `sysrc`)
 
-## Details
+## Notes
 
-- **Amounts** accept `12`, `12.5` or `12.50`. They must be greater than zero and have at most two decimal places. They are stored as whole cents, so totals never suffer floating-point rounding errors.
-- **Categories** are case-insensitive and stored in lowercase, so `Food` and `food` are the same category.
-- **Dates** are set automatically to today's date in UTC (`YYYY-MM-DD`).
-- **IDs** are never reused while newer entries exist: a new expense gets the highest existing ID plus one.
-
-## Data file
-
-Expenses are stored as tab-separated text, one per line:
-
-```
-id <TAB> date <TAB> cents <TAB> category <TAB> description
-```
-
-The file location is, in order of priority:
-
-1. The path in the `EXPENSE_FILE` environment variable
-2. `~/.expenses.tsv`
-
-```
-EXPENSE_FILE=./work-expenses.tsv expense add 25 office printer paper
-```
-
-Saves are written to a temporary file and then renamed into place, so a crash mid-write cannot corrupt your data.
-
-## Tests
-
-```
-cargo test
-```
+- Set `JAIL_IP`, `JAIL_IF` and `RELEASE` to match your host before running `make all`.
+- Use the same variable values for every command on a given jail (for example `make stop JAIL_NAME=web`), since the paths are derived from them.
+- `make destroy` permanently deletes the jail's files and config. Check `JAIL_NAME` first.
+- The jail inherits the host's `/etc/resolv.conf` and timezone at creation time.
+- Base-system updates inside the jail can be done with `freebsd-update -b ${JAIL_ROOT} fetch install`.
